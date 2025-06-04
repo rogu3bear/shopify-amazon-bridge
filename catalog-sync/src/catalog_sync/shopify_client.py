@@ -1,6 +1,7 @@
 import os
 import requests
 from dotenv import load_dotenv
+from .database import initialize_db, upsert_product
 
 # Load environment variables from .env file
 load_dotenv()
@@ -137,34 +138,63 @@ if __name__ == "__main__":
         print("SHOPIFY_API_KEY=your_api_key")
         print("SHOPIFY_API_PASSWORD=your_app_password_or_access_token")
     else:
+        db_conn = None  # Initialize db_conn to None
         try:
             client = ShopifyAPIClient()
             print("ShopifyAPIClient initialized successfully.")
-            
-            # Test fetching products
-            # print("\nFetching products...")
-            # products_response = client.get_products(limit=5)
-            # if products_response and 'products' in products_response:
-            #     print(f"Fetched {len(products_response['products'])} products:")
-            #     for product in products_response['products']:
-            #         print(f"  - ID: {product['id']}, Title: {product['title']}")
-            # else:
-            #     print("Failed to fetch products or no products found.")
 
-            # Test fetching a specific product (replace with a valid product ID from your test store)
-            # test_product_id = 1234567890 # Replace with a real Product ID
-            # print(f"\nFetching product details for ID: {test_product_id}...")
-            # product_details = client.get_product_details(test_product_id)
-            # if product_details:
-            #     print(f"Product Title: {product_details['title']}")
-            #     print(f"  SKU: {product_details['sku']}")
-            #     print(f"  Price: {product_details['price']}")
-            #     print(f"  Inventory: {product_details['inventory_quantity']}")
-            #     print(f"  Image URL: {product_details['main_image_url']}")
-            # else:
-            #     print(f"Failed to fetch product details for ID: {test_product_id}")
+            # --- Initialize Database ---
+            print("\nInitializing database...")
+            db_conn = initialize_db() # Default path is catalog.db relative to where script is run
+                                      # For consistency, it might be better to define DB_FILENAME in one place (e.g. a config module)
+                                      # and ensure it uses an absolute path or path relative to project root.
+                                      # Current database.py DB_FILENAME = "catalog.db"
+            print("Database initialized.")
+            # ---
+            
+            # Test fetching products and storing them
+            print("\nFetching products (limit 2 for example)...")
+            products_response_data = client.get_products(limit=2)
+            
+            if products_response_data and products_response_data.get('products'):
+                fetched_products = products_response_data['products']
+                print(f"Fetched {len(fetched_products)} products:")
+                for product in fetched_products:
+                    print(f"  - Processing Product ID: {product['id']}, Title: {product['title']}")
+                    if product.get('sku'): # Only attempt to upsert if SKU is present
+                        if upsert_product(db_conn, product):
+                            print(f"    Successfully upserted product with SKU: {product['sku']}")
+                        else:
+                            print(f"    Product with SKU: {product['sku']} (ID: {product['id']}) likely unchanged or error in upsert.")
+                    else:
+                        print(f"    Skipping product ID: {product['id']} as it has no SKU (first variant).")
+            else:
+                print("Failed to fetch products or no products found.")
+
+            # Example: Test fetching a specific product and storing it
+            # test_product_id = 'gid://shopify/Product/YOUR_TEST_PRODUCT_ID' # Replace with a real Product ID from your test store (use the GID format or integer)
+            # if test_product_id != 'gid://shopify/Product/YOUR_TEST_PRODUCT_ID':
+            #     print(f"\nFetching product details for ID: {test_product_id}...")
+            #     product_details = client.get_product_details(test_product_id)
+            #     if product_details:
+            #         print(f"  Product Title: {product_details['title']}")
+            #         print(f"    SKU: {product_details['sku']}")
+            #         print(f"    Price: {product_details['price']}")
+            #         if product_details.get('sku'):
+            #             if upsert_product(db_conn, product_details):
+            #                 print(f"    Successfully upserted product with SKU: {product_details['sku']}")
+            #             else:
+            #                 print(f"    Product with SKU: {product_details['sku']} likely unchanged or error in upsert.")
+            #         else:
+            #             print(f"    Skipping product ID: {product_details['id']} as it has no SKU (first variant).")
+            #     else:
+            #         print(f"  Failed to fetch product details for ID: {test_product_id}")
 
         except ValueError as e:
-            print(f"Error initializing client: {e}")
+            print(f"Error: {e}")
         except Exception as e:
-            print(f"An unexpected error occurred: {e}") 
+            print(f"An unexpected error occurred: {e}")
+        finally:
+            if db_conn:
+                db_conn.close()
+                print("\nDatabase connection closed.") 
