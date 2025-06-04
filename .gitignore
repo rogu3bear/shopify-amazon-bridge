@@ -1,3 +1,5 @@
 *.db
 .env
 __pycache__/
+catalog-sync/build/
+catalog-sync/output/
