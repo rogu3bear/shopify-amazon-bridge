@@ -20,6 +20,38 @@ class ShopifyAPIClient:
 
         self.base_url = f"https://{self.api_key}:{self.api_password}@{self.store_url}/admin/api/2023-10" # Using 2023-10 API version, can be updated
 
+    def _parse_product_data(self, product_raw_data):
+        """Helper function to parse raw product data into a structured dict."""
+        # Default to None for fields that might be missing
+        sku = None
+        price = None
+        inventory_quantity = None
+
+        if product_raw_data.get('variants') and len(product_raw_data['variants']) > 0:
+            first_variant = product_raw_data['variants'][0]
+            sku = first_variant.get('sku')
+            price = first_variant.get('price')
+            inventory_quantity = first_variant.get('inventory_quantity')
+        
+        main_image_url = None
+        if product_raw_data.get('image') and product_raw_data['image'].get('src'):
+            main_image_url = product_raw_data['image'].get('src')
+        elif product_raw_data.get('images') and len(product_raw_data['images']) > 0:
+            main_image_url = product_raw_data['images'][0].get('src')
+
+        return {
+            'id': product_raw_data.get('id'),
+            'title': product_raw_data.get('title'),
+            'sku': sku,
+            'price': price,
+            'inventory_quantity': inventory_quantity,
+            'body_html': product_raw_data.get('body_html'), # Basic description
+            'main_image_url': main_image_url,
+            # Store the full variant data for now, might be useful for Task 1.1.3
+            'variants': product_raw_data.get('variants', []),
+            'raw_shopify_data': product_raw_data # Keep raw data for potential future needs/debugging
+        }
+
     def _request(self, method, endpoint, params=None, json_data=None):
         url = f"{self.base_url}/{endpoint}"
         headers = {
@@ -63,7 +95,13 @@ class ShopifyAPIClient:
         # For simplicity, this initial version doesn't fully implement link header parsing.
         # We will need to enhance this for robust pagination.
         
-        return self._request("GET", "products.json", params=params)
+        raw_response = self._request("GET", "products.json", params=params)
+        if raw_response and 'products' in raw_response:
+            parsed_products = [self._parse_product_data(p) for p in raw_response['products']]
+            # Pass along pagination info if present in raw_response (e.g. Link headers for Shopify)
+            # For now, returning parsed products and the raw response for pagination handling later
+            return {'products': parsed_products, 'raw_response': raw_response}
+        return None
 
     def get_product_details(self, product_id):
         """
@@ -73,9 +111,12 @@ class ShopifyAPIClient:
             product_id (int or str): The ID of the Shopify product.
             
         Returns:
-            dict: JSON response containing the product details, or None on error.
+            dict: Parsed product details, or None on error.
         """
-        return self._request("GET", f"products/{product_id}.json")
+        raw_product = self._request("GET", f"products/{product_id}.json")
+        if raw_product and 'product' in raw_product:
+            return self._parse_product_data(raw_product['product'])
+        return None
 
 # Example usage (for testing purposes, will be removed or moved to a test file)
 if __name__ == "__main__":
@@ -114,8 +155,12 @@ if __name__ == "__main__":
             # test_product_id = 1234567890 # Replace with a real Product ID
             # print(f"\nFetching product details for ID: {test_product_id}...")
             # product_details = client.get_product_details(test_product_id)
-            # if product_details and 'product' in product_details:
-            #     print(f"Product Title: {product_details['product']['title']}")
+            # if product_details:
+            #     print(f"Product Title: {product_details['title']}")
+            #     print(f"  SKU: {product_details['sku']}")
+            #     print(f"  Price: {product_details['price']}")
+            #     print(f"  Inventory: {product_details['inventory_quantity']}")
+            #     print(f"  Image URL: {product_details['main_image_url']}")
             # else:
             #     print(f"Failed to fetch product details for ID: {test_product_id}")
 
